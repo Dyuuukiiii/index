@@ -7,6 +7,7 @@ import json
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
+
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 PREFIX = os.getenv('BOT_PREFIX', '!')
@@ -230,27 +231,345 @@ async def trivia(ctx):
         embed.add_field(name="✅", value=f"**{trivia['answer']}. {trivia['full']}**")
         await msg.edit(embed=embed)
 
-# 🎲 DAILY RANDOM REWARDS
+# ⌨️ SPEED TYPING — FILIPINO TONGUE TWISTERS
+TWISTERS = [
+    "Pinaikot-ikot ni Kiko ang kanyang kotse.",
+    "Minekaniko ng mekaniko si Monico.",
+    "Bababa ba? Bababa.",
+    "Ang relo ni Lolo Rolly ay galing pa Roma.",
+    "Pitongput pitong puting tupa.",
+    "Nakakapagpabagabag ang nakakapagpabagabag na balita.",
+    "Usong-uso ang suso ni Susan sa Lunes.",
+    "Ang aso ni Oslo ay nasa loob ng asul na kahon.",
+    "Pinagpapalit-palit ni Pete ang plato at platito.",
+    "Si Tetang nakatikim ng tatlong tutong na tinapay.",
+    "Kakakanta-kanta ka pa rin pala kahapon.",
+    "Si Pepe pumipili ng pinakapipiling pinya.",
+    "Tatlong tukong matatakaw, tumakbong tatlo sa takipsilim.",
+    "Naka pang-ilalim na panyo si Pinang.",
+    "Bumili ako ng bituka ng butiki sa Bulacan.",
+    "Kakakaway-kaway ng kakaibang kawayan ni Kakay.",
+    "Si Ising isang nag-iisang isda sa Iloilo.",
+    "Ang lalaking maraming alaga ay laging nagaalaga ng alaga.",
+    "Si Lorna naglalaba ng lalabhanin sa lababo.",
+    "Pulang pulis sa pulang pader nakapulupot na pulang panyolito.",
+    "Kalbo ang kalabaw ni Kabesang Kanor.",
+    "Tagaytay, Tuktok, Tagbilaran, Tagaytay ulit.",
+    "Mama, mamamamamamamamamamayan na po ako.",
+    "Ang ampalaya ni Aling Lyana ay laging maasim na maasim.",
+    "Sinusuyod ng suyod si Seyong sa Sabado.",
+    "Pakulputin mo ang kulot na pakulot ni Pekto.",
+    "Ang batang batugan ay nag-bababatibot sa batuhan.",
+]
+
+def _normalize(text: str) -> str:
+    return ''.join(ch.lower() for ch in text if ch.isalnum())
+
+DIFFICULTIES = {
+    "easy":   {"memorize": 8,   "mult": 1.0, "cap": 8000,  "label": "🟢 EASY",   "color": 0x2ECC71},
+    "normal": {"memorize": 5,   "mult": 1.5, "cap": 12000, "label": "🟣 NORMAL", "color": 0x9B59B6},
+    "hard":   {"memorize": 3,   "mult": 2.5, "cap": 20000, "label": "🟠 HARD",   "color": 0xE67E22},
+    "insane": {"memorize": 1.5, "mult": 4.0, "cap": 40000, "label": "🔴 INSANE", "color": 0xC0392B},
+}
+DIFFICULTY_ALIASES = {
+    "e": "easy", "easy": "easy",
+    "n": "normal", "normal": "normal", "norm": "normal", "med": "normal", "medium": "normal",
+    "h": "hard", "hard": "hard",
+    "i": "insane", "insane": "insane", "imposible": "insane", "impossible": "insane",
+}
+
+@bot.command(name='twister', aliases=['type', 'tw'])
+async def twister(ctx, difficulty: str = "normal"):
+    """Memorize a Filipino tongue twister, then type it from memory!
+    Difficulty: easy / normal / hard / insane"""
+    diff_key = DIFFICULTY_ALIASES.get(difficulty.lower())
+    if not diff_key:
+        await ctx.send(
+            "❌ **Pick a difficulty:** `!twister easy` `!twister normal` `!twister hard` `!twister insane`"
+        )
+        return
+    diff = DIFFICULTIES[diff_key]
+
+    phrase = random.choice(TWISTERS)
+    memorize_secs = diff["memorize"]
+
+    # Typing window AFTER the phrase disappears
+    time_limit = max(8, min(30, int(len(phrase) * 0.45)))
+
+    # STEP 1: Reveal phrase for memorize_secs only
+    embed = discord.Embed(
+        title=f"⌨️ **TONGUE TWISTER — {diff['label']}**",
+        description=f"🧠 **Memorize this in {memorize_secs}s!** It will disappear...",
+        color=diff["color"],
+    )
+    embed.add_field(name="🌀 Phrase", value=f"```{phrase}```", inline=False)
+    embed.add_field(name="⏱️ Memorize", value=f"**{memorize_secs}s**", inline=True)
+    embed.add_field(name="💰 Reward", value=f"**up to {diff['cap']:,} coins** ({diff['mult']}x)", inline=True)
+    embed.set_footer(text="Tandaan mo! Mawawala na 'yan ⚡")
+
+    msg = await ctx.send(embed=embed)
+    await asyncio.sleep(memorize_secs)
+
+    # STEP 2: Hide the phrase, open typing window
+    hidden = discord.Embed(
+        title=f"🫥 **PHRASE HIDDEN — TYPE NOW! ({diff['label']})**",
+        description="Type the tongue twister **from memory** before time runs out!",
+        color=0xE67E22,
+    )
+    hidden.add_field(name="🌀 Phrase", value="```???  HIDDEN  ???```", inline=False)
+    hidden.add_field(name="⏱️ Type", value=f"**{time_limit}s**", inline=True)
+    hidden.add_field(name="💰 Reward", value=f"**up to {diff['cap']:,} coins** ({diff['mult']}x)", inline=True)
+    hidden.set_footer(text="Bilis! Type it back as your next message ⚡")
+    await msg.edit(embed=hidden)
+
+    start = asyncio.get_event_loop().time()
+
+    def check(m):
+        return m.channel == ctx.channel and m.author == ctx.author
+
+    try:
+        ans = await bot.wait_for('message', timeout=time_limit, check=check)
+        elapsed = asyncio.get_event_loop().time() - start
+
+        target_norm = _normalize(phrase)
+        user_norm = _normalize(ans.content)
+
+        if user_norm == target_norm:
+            # Reward scales with phrase length, remaining time, and difficulty multiplier
+            base = 500 + len(phrase) * 40
+            speed_bonus = int(((time_limit - elapsed) / time_limit) * 3000)
+            raw_reward = int((base + speed_bonus) * diff["mult"])
+            reward = min(diff["cap"], raw_reward)
+            update_balance(ctx.author.id, reward)
+
+            result = discord.Embed(title=f"🏆 **paldo — {diff['label']}**", color=0x00FF00)
+            result.add_field(name="⚡ Time", value=f"**{elapsed:.2f}s**", inline=True)
+            result.add_field(name="🪙 Reward", value=f"**{reward:,} coins** ({diff['mult']}x)", inline=True)
+            result.add_field(name="✅ Phrase", value=f"```{phrase}```", inline=False)
+            await ctx.send(embed=result)
+        else:
+            # Partial credit: count correct characters in order (LCS-lite via prefix match)
+            matched = 0
+            for a, b in zip(user_norm, target_norm):
+                if a == b:
+                    matched += 1
+                else:
+                    break
+            accuracy = (matched / len(target_norm)) * 100 if target_norm else 0
+
+            result = discord.Embed(title="❌ **tanga mo naman**", color=0xFF0000)
+            result.add_field(name="🎯 Accuracy", value=f"**{accuracy:.0f}%**", inline=True)
+            result.add_field(name="⏱️ Time", value=f"**{elapsed:.2f}s**", inline=True)
+            result.add_field(name="✅ Tama", value=f"```{phrase}```", inline=False)
+            result.add_field(name="📝 Sagot mo", value=f"```{ans.content[:200]}```", inline=False)
+            await ctx.send(embed=result)
+    except asyncio.TimeoutError:
+        result = discord.Embed(title="⏰ **overtime tanga mo naman**", color=0xFFA500)
+        result.add_field(name="✅ Phrase", value=f"```{phrase}```", inline=False)
+        await ctx.send(embed=result)
+
+# 🔀 FILIPINO WORD SCRAMBLE
+SCRAMBLE_WORDS = [
+    ("adobo", "national dish"),
+    ("sampaguita", "national flower"),
+    ("jeepney", "iconic public transport"),
+    ("balikbayan", "returning kababayan"),
+    ("kalabaw", "national animal"),
+    ("bayanihan", "community spirit"),
+    ("halohalo", "iced dessert"),
+    ("sinigang", "sour soup"),
+    ("kamatis", "tomato in tagalog"),
+    ("mabuhay", "filipino greeting"),
+    ("pinoy", "slang for filipino"),
+    ("pasalubong", "homecoming gift"),
+    ("kuya", "older brother"),
+    ("ate", "older sister"),
+    ("lola", "grandma"),
+    ("lolo", "grandpa"),
+    ("kapamilya", "family / abs-cbn"),
+    ("kapuso", "one heart / gma"),
+    ("manananggal", "mythical creature"),
+    ("aswang", "shape-shifting monster"),
+    ("tikbalang", "horse demon"),
+    ("kapre", "tree-dwelling giant"),
+    ("nuno", "small old man (sa punso)"),
+    ("salamat", "thank you"),
+    ("kumusta", "how are you"),
+    ("paalam", "goodbye"),
+    ("magandangaraw", "good day"),
+    ("payong", "umbrella"),
+    ("tsinelas", "slippers"),
+    ("kalye", "street"),
+    ("simbahan", "church"),
+    ("palengke", "wet market"),
+    ("eskwelahan", "school"),
+    ("pamilya", "family"),
+    ("kaibigan", "friend"),
+    ("puso", "heart"),
+    ("luzon", "northern island group"),
+    ("visayas", "central island group"),
+    ("mindanao", "southern island group"),
+    ("manila", "national capital"),
+    ("baguio", "summer capital"),
+    ("boracay", "famous beach"),
+    ("palawan", "underground river"),
+    ("pacquiao", "boxing legend"),
+    ("rizal", "national hero"),
+    ("bonifacio", "katipunan founder"),
+    ("lapulapu", "datu of mactan"),
+    ("tinikling", "bamboo dance"),
+    ("karaoke", "videoke"),
+    ("balut", "duck embryo snack"),
+]
+
+def _scramble(word: str) -> str:
+    if len(word) <= 2:
+        return word
+    chars = list(word)
+    for _ in range(20):
+        random.shuffle(chars)
+        scrambled = ''.join(chars)
+        if scrambled.lower() != word.lower():
+            return scrambled
+    return scrambled
+
+@bot.command(name='scramble', aliases=['scram', 'sc'])
+async def scramble(ctx):
+    """Unscramble a Filipino word before the timer runs out!"""
+    word, hint = random.choice(SCRAMBLE_WORDS)
+    scrambled = _scramble(word)
+
+    # Time scales with length: ~2s per letter, min 10s, max 30s
+    time_limit = max(10, min(30, int(len(word) * 2)))
+
+    embed = discord.Embed(
+        title="🔀 **WORD SCRAMBLE**",
+        description="Unscramble the Filipino word before the timer runs out!",
+        color=0x1ABC9C,
+    )
+    embed.add_field(name="🔀 Scrambled", value=f"```{scrambled.upper()}```", inline=False)
+    embed.add_field(name="💡 Hint", value=f"_{hint}_", inline=True)
+    embed.add_field(name="⏱️ Time", value=f"**{time_limit}s**", inline=True)
+    embed.add_field(name="💰 Reward", value="**up to 10,000 coins**", inline=True)
+    embed.set_footer(text="Type the unscrambled word as your next message ⚡")
+
+    msg = await ctx.send(embed=embed)
+    start = asyncio.get_event_loop().time()
+
+    def check(m):
+        return m.channel == ctx.channel and m.author == ctx.author
+
+    try:
+        ans = await bot.wait_for('message', timeout=time_limit, check=check)
+        elapsed = asyncio.get_event_loop().time() - start
+
+        guess = ''.join(ch.lower() for ch in ans.content if ch.isalpha())
+        target = word.lower()
+
+        if guess == target:
+            base = 400 + len(word) * 200
+            speed_bonus = int(((time_limit - elapsed) / time_limit) * 3000)
+            reward = min(10000, base + speed_bonus)
+            update_balance(ctx.author.id, reward)
+
+            result = discord.Embed(title="🏆 **tanginamo galing mo**", color=0x00FF00)
+            result.add_field(name="⚡ Time", value=f"**{elapsed:.2f}s**", inline=True)
+            result.add_field(name="🪙 Reward", value=f"**{reward:,} coins**", inline=True)
+            result.add_field(name="✅ Word", value=f"**{word.upper()}**", inline=False)
+            await ctx.send(embed=result)
+        else:
+            result = discord.Embed(title="❌ **MALI! tanga mo**", color=0xFF0000)
+            result.add_field(name="📝 Sagot mo", value=f"`{ans.content[:60]}`", inline=True)
+            result.add_field(name="✅ Tama", value=f"**{word.upper()}**", inline=True)
+            await ctx.send(embed=result)
+    except asyncio.TimeoutError:
+        result = discord.Embed(title="⏰ **TIME'S UP!**", color=0xFFA500)
+        result.add_field(name="✅ Word", value=f"**{word.upper()}**", inline=False)
+        await ctx.send(embed=result)
+
+# 🎲 DAILY RANDOM REWARDS + STREAKS
+STREAK_MILESTONES = [
+    (3,   1000,  "🔥 3-DAY STREAK"),
+    (7,   5000,  "🔥🔥 7-DAY STREAK"),
+    (14,  12000, "🔥🔥🔥 14-DAY STREAK"),
+    (30,  25000, "👑 30-DAY STREAK"),
+    (60,  60000, "🌟 60-DAY LEGEND"),
+    (100, 150000, "💎 100-DAY DIYAMANTE"),
+]
+
 @bot.command(name='daily')
 async def daily(ctx):
     now = datetime.now()
     user_str = str(ctx.author.id)
-    today = now.date().isoformat()
-    
-    if currency_data.get(user_str, {}).get('daily_date') == today:
-        await ctx.send("⏰ **Daily na-claim mo na** Tomorrow ulit")
-        return
-    
-    reward = random.randint(100, 15000)
-    update_balance(ctx.author.id, reward)
-    currency_data[user_str]['daily_date'] = today
-    save_data()
-    
-    rarity = "JACKPOT" if reward > 10000 else "EPIC" if reward > 5000 else "LUCKY" if reward > 2000 else "Good"
-    embed = discord.Embed(title=f"**daily roll: {rarity}!**", color=0x00FF00)
-    embed.add_field(name="🪙", value=f"**{reward:,} Coins**")
-    await ctx.send(embed=embed)
+    today = now.date()
+    today_iso = today.isoformat()
 
+    # Ensure user record exists
+    get_balance(ctx.author.id)
+    user_rec = currency_data[user_str]
+
+    last_claim = user_rec.get('daily_date')
+    if last_claim == today_iso:
+        streak = user_rec.get('streak', 0)
+        await ctx.send(f"⏰ **Daily na-claim mo na** Tomorrow ulit\n🔥 Current streak: **{streak} day(s)**")
+        return
+
+    streak = user_rec.get('streak', 0)
+    if last_claim:
+        try:
+            last_date = datetime.fromisoformat(last_claim).date()
+            delta = (today - last_date).days
+            if delta == 1:
+                streak += 1
+            elif delta > 1:
+                streak = 1
+            else:
+                streak = max(streak, 1)
+        except Exception:
+            streak = 1
+    else:
+        streak = 1
+
+    best = max(user_rec.get('best_streak', 0), streak)
+
+    base_reward = random.randint(100, 15000)
+
+    milestone_bonus = 0
+    milestone_label = None
+    for days, bonus, label in STREAK_MILESTONES:
+        if streak == days:
+            milestone_bonus = bonus
+            milestone_label = label
+            break
+
+    total = base_reward + milestone_bonus
+    update_balance(ctx.author.id, total)
+    user_rec['daily_date'] = today_iso
+    user_rec['streak'] = streak
+    user_rec['best_streak'] = best
+    save_data()
+
+    rarity = "JACKPOT" if base_reward > 10000 else "EPIC" if base_reward > 5000 else "LUCKY" if base_reward > 2000 else "Good"
+    color = 0xFFD700 if milestone_bonus else 0x00FF00
+    title = f"**daily roll: {rarity}!**"
+    if milestone_label:
+        title = f"**{milestone_label} — {rarity}!**"
+
+    embed = discord.Embed(title=title, color=color)
+    embed.add_field(name="🪙 Daily", value=f"**{base_reward:,}**", inline=True)
+    if milestone_bonus:
+        embed.add_field(name="🎁 Streak bonus", value=f"**+{milestone_bonus:,}**", inline=True)
+    embed.add_field(name="💰 Total", value=f"**{total:,} coins**", inline=True)
+    embed.add_field(name="🔥 Streak", value=f"**{streak} day(s)** (best: {best})", inline=False)
+
+    next_ms = next(((d, b, l) for d, b, l in STREAK_MILESTONES if d > streak), None)
+    if next_ms:
+        days_left = next_ms[0] - streak
+        embed.set_footer(text=f"⏭️ {days_left} day(s) until {next_ms[2]} (+{next_ms[1]:,} bonus)")
+    else:
+        embed.set_footer(text="👑 You've hit the highest streak tier — keep it up!")
+
+    await ctx.send(embed=embed)
 # 🪙 COIN FLIP BETTING
 @bot.command(name='flip', aliases=['cf'])
 async def coinflip(ctx, amount: str = None, side: str = None):
@@ -359,26 +678,145 @@ async def balance(ctx):
     """Only shows YOUR currency amount"""
     bal = get_balance(ctx.author.id)
     await ctx.send(f"🪙 **{bal:,}**")
+@bot.command(name='streak', aliases=['str'])
+async def streak_cmd(ctx, user: discord.Member = None):
+    """View daily-claim streak (yours or another user's)."""
+    target = user or ctx.author
+    user_str = str(target.id)
+    get_balance(target.id)
+    rec = currency_data[user_str]
+    cur = rec.get('streak', 0)
+    best = rec.get('best_streak', 0)
+    last = rec.get('daily_date', 'never')
+
+    next_ms = next(((d, b, l) for d, b, l in STREAK_MILESTONES if d > cur), None)
+    embed = discord.Embed(title=f"🔥 **{target.display_name}'s streak**", color=0xFF6B35)
+    embed.add_field(name="Current", value=f"**{cur} day(s)**", inline=True)
+    embed.add_field(name="Best", value=f"**{best} day(s)**", inline=True)
+    embed.add_field(name="Last claim", value=f"`{last}`", inline=False)
+    if next_ms:
+        embed.set_footer(text=f"⏭️ {next_ms[0] - cur} day(s) until {next_ms[2]} (+{next_ms[1]:,} bonus)")
+    else:
+        embed.set_footer(text="👑 Highest streak tier reached!")
+    await ctx.send(embed=embed)
+
+
+LB_CATEGORIES = {
+    "rich":    {"label": "RICHEST PINOY",       "key": "balance",     "emoji": "👑", "color": 0xFFD700, "unit": "coins",   "default": 0},
+    "balance": {"label": "RICHEST PINOY",       "key": "balance",     "emoji": "👑", "color": 0xFFD700, "unit": "coins",   "default": 0},
+    "streak":  {"label": "ACTIVE STREAKS",      "key": "streak",      "emoji": "🔥", "color": 0xFF6B35, "unit": "day(s)",  "default": 0},
+    "best":    {"label": "ALL-TIME BEST STREAK","key": "best_streak", "emoji": "🏆", "color": 0xE91E63, "unit": "day(s)",  "default": 0},
+    "broke":   {"label": "BROKEST PINOY",       "key": "balance",     "emoji": "💸", "color": 0x607D8B, "unit": "coins",   "default": 0, "ascending": True},
+}
+LB_ALIASES = {
+    "rich": "rich", "r": "rich", "money": "rich", "balance": "rich", "bal": "rich",
+    "streak": "streak", "s": "streak", "fire": "streak",
+    "best": "best", "b": "best", "all": "best", "alltime": "best",
+    "broke": "broke", "poor": "broke", "low": "broke",
+}
+
+def _medal(rank):
+    return {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"`#{rank:>2}`")
+
+async def _name_for(uid):
+    """Resolve a Discord user's display name, fetching from API if not cached."""
+    try:
+        user = bot.get_user(int(uid))
+        if user is None:
+            user = await bot.fetch_user(int(uid))
+        if user is not None:
+            return (user.display_name or user.name)[:18]
+    except Exception:
+        pass
+    return f"User-{uid[-4:]}"
 
 @bot.command(name='leaderboard', aliases=['lb', 'top', 'rich'])
-async def leaderboard(ctx):
-    top = sorted([(k, v['balance']) for k, v in currency_data.items()], 
-                key=lambda x: x[1], reverse=True)[:10]
-    
-    embed = discord.Embed(title="👑 **Riches list**", color=0x0099FF)
-    for i, (uid, bal) in enumerate(top, 1):
-        user = bot.get_user(int(uid))
-        name = user.display_name[:14] if user else uid[-4:]
-        medal = "🥇🥈🥉" if i <= 3 else f"{i}."
-        embed.add_field(name=f"{medal} {name}", value=f"🪙 **{bal:,}**", inline=False)
-    await ctx.send(embed=embed)
+async def leaderboard(ctx, category: str = "rich"):
+    """Top 10 across multiple categories. Usage: !lb [rich|streak|best|broke]"""
+    cat_key = LB_ALIASES.get(category.lower())
+    if not cat_key:
+        await ctx.send(
+            "❌ **Pick a category:** `!lb rich` `!lb streak` `!lb best` `!lb broke`"
+        )
+        return
+    cat = LB_CATEGORIES[cat_key]
+    field = cat["key"]
+    ascending = cat.get("ascending", False)
+
+    # Build full ranking (only include users with non-default values, except for broke we want everyone)
+    entries = []
+    for uid, rec in currency_data.items():
+        val = rec.get(field, cat["default"])
+        if isinstance(val, (int, float)):
+            entries.append((uid, val))
+    entries.sort(key=lambda x: x[1], reverse=not ascending)
+
+    if not entries:
+        await ctx.send("📭 **Walang laman ang leaderboard.** Be the first to play!")
+        return
+
+    total_players = len(entries)
+    me_id = str(ctx.author.id)
+    my_rank = next((i + 1 for i, (uid, _) in enumerate(entries) if uid == me_id), None)
+
+    # Build a row for EVERY player (with medals on top 3, #N for the rest)
+    lines = []
+    for rank, (uid, val) in enumerate(entries, 1):
+        medal = _medal(rank)
+        name = await _name_for(uid)
+        marker = " ⭐" if uid == me_id else ""
+        if isinstance(val, float):
+            val_str = f"{val:,.1f}"
+        else:
+            val_str = f"{val:,}"
+        lines.append(f"{medal}  {name:<18} {val_str:>10} {cat['unit']}{marker}")
+
+    # Chunk lines into pages so each embed stays under Discord's 4096-char description limit
+    pages = []
+    current = []
+    current_len = 0
+    MAX = 3800  # leave headroom for code fence + formatting
+    for line in lines:
+        # +1 for newline
+        if current and current_len + len(line) + 1 > MAX:
+            pages.append(current)
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += len(line) + 1
+    if current:
+        pages.append(current)
+
+    total_pages = len(pages)
+    for page_idx, page_lines in enumerate(pages, 1):
+        table = "```\n" + "\n".join(page_lines) + "\n```"
+        suffix = f" — page {page_idx}/{total_pages}" if total_pages > 1 else ""
+        embed = discord.Embed(
+            title=f"{cat['emoji']} **{cat['label']} — ALL PLAYERS**{suffix}",
+            description=table,
+            color=cat["color"],
+        )
+        # Show requester's rank on the LAST page if not visible elsewhere
+        if page_idx == total_pages and my_rank:
+            my_val = next(v for u, v in entries if u == me_id)
+            my_str = f"{my_val:,}"
+            embed.add_field(
+                name="👤 Your rank",
+                value=f"**#{my_rank}** — {my_str} {cat['unit']}",
+                inline=False,
+            )
+        if page_idx == total_pages:
+            embed.set_footer(text=f"👥 {total_players} players  •  Try: !lb rich / streak / best / broke")
+        await ctx.send(embed=embed)
 
 # 🎮 HELP & STATUS
 @bot.command(name='help')
 async def help_all(ctx):
     embed = discord.Embed(title="**casino ni paysen**", description="**casino ni paysen**", color=0xFF6B35)
-    embed.add_field(name="🧐 Trivia", value="`!trivia` - Unlimited questions", inline=True)
-    embed.add_field(name="🎲 Daily", value="`!daily` - 100-15k coins", inline=True)
+    embed.add_field(name="🧐 Trivia", value="`!trivia` - filipino trivia's", inline=True)
+    embed.add_field(name="⌨️ Twister", value="`!twister easy/normal/hard/insane`", inline=True)
+    embed.add_field(name="🔀 Scramble", value="`!scramble` - Filipino word scramble", inline=True)
+    embed.add_field(name="🎲 Daily", value="`!daily` + streaks `!streak`", inline=True)
     embed.add_field(name="🪙 Flip", value="`!flip 100 h/t` - 2x payout", inline=True)
     embed.add_field(name="🎁 Gift", value="`!gift @user 500`", inline=True)
     embed.add_field(name="💰 Info", value="`!balance` `!lb`", inline=True)
