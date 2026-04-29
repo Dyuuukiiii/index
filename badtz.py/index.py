@@ -622,7 +622,7 @@ async def coinflip(ctx, amount: str = None, side: str = None):
     if all_in and not won:
         embed.add_field(name="", value="**Wala ka nang pera, tanga kasi.**", inline=False)
     elif all_in and won:
-        embed.add_field(name="💰", value="**DOUBLED UP!**", inline=False)
+        embed.add_field(name="", value="**PALDOO**", inline=False)
     embed.add_field(name="Balance", value=f"**{new_bal:,}**", inline=False)
     await msg.edit(embed=embed)
 
