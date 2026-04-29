@@ -592,7 +592,6 @@ async def coinflip(ctx, amount: str = None, side: str = None):
                 await ctx.send(f"❌ **Bet 10-{balance:,}** only!")
                 return
     except Exception:
-        await ctx.send("❌ **Numbers only!** (or `all`)")
         return
 
     if side and side.lower() not in ['h', 'heads', 't', 'tails']:
@@ -616,14 +615,14 @@ async def coinflip(ctx, amount: str = None, side: str = None):
     all_in = (bet == balance)
     title = f"🪙 **{result}**"
     if all_in:
-        title += "  — ALL-IN "
+        title += "  — 🔥 ALL-IN 🔥"
     embed = discord.Embed(title=title, color=0x00FF00 if won else 0xFF0000)
     embed.add_field(name="Bet", value=f"**{bet:,}**", inline=True)
     embed.add_field(name="📊", value=("**WIN**" if won else "**LOST**") + (" 💥" if all_in else ""), inline=True)
     if all_in and not won:
         embed.add_field(name="💀", value="**Wala ka nang pera, bro.**", inline=False)
     elif all_in and won:
-        embed.add_field(name="💰", value="**DOUBLED UP**", inline=False)
+        embed.add_field(name="💰", value="**DOUBLED UP!**", inline=False)
     embed.add_field(name="Balance", value=f"**{new_bal:,}**", inline=False)
     await msg.edit(embed=embed)
 
