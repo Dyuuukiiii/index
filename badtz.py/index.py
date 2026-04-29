@@ -571,42 +571,59 @@ async def daily(ctx):
 
     await ctx.send(embed=embed)
 # 🪙 COIN FLIP BETTING
-@bot.command(name='flip', aliases=['cf'])
+@bot.command(name='flip', aliases=['cf', 'coinflip'])
 async def coinflip(ctx, amount: str = None, side: str = None):
+    """Coin flip. Usage: !flip <amount|all> [h|t]"""
     user_id = ctx.author.id
     balance = get_balance(user_id)
-    
+
     try:
         if not amount:
-            await ctx.send(f"💡 `!flip 100 heads` `!flip 500 t`\n🪙 **{balance:,}** available")
+            await ctx.send(f"💡 `!flip 100 heads` `!flip all t` `!flip 500 t`\n🪙 **{balance:,}** available")
             return
-        bet = int(amount.replace('k', '000').replace(',', ''))
-        if bet > balance or bet < 10:
-            await ctx.send(f"❌ **Bet 10-{balance:,}** only!")
-            return
-    except:
-        await ctx.send("❌ **Numbers only!**")
+        if amount.lower() in ('all', 'allin', 'max'):
+            if balance < 10:
+                await ctx.send(f"❌ **Need at least 10 coins to go all-in.** You have 🪙**{balance:,}**.")
+                return
+            bet = balance
+        else:
+            bet = int(amount.replace('k', '000').replace(',', ''))
+            if bet > balance or bet < 10:
+                await ctx.send(f"❌ **Bet 10-{balance:,}** only!")
+                return
+    except Exception:
+        await ctx.send("❌ **Numbers only!** (or `all`)")
         return
-    
+
     if side and side.lower() not in ['h', 'heads', 't', 'tails']:
         await ctx.send("🎯 **`h`eads or `t`ails**")
         return
-    
-    msg = await ctx.send(f"🪙 **Flipping {bet:,} coins...** {'' if side and side.lower().startswith('h') else ''}")
+
+    msg = await ctx.send(f"🪙 **Flipping {bet:,} coins...**")
     await asyncio.sleep(2.5)
-    
+
     result = random.choice(['Heads', 'Tails'])
-    won = (side and side.lower().startswith('h') and result == 'Heads') or \
-          (side and side.lower().startswith('t') and result == 'Tails') or \
-          random.choice([True, False])
-    
-    payout = bet * 2 if won else -bet
+    if side:
+        won = (side.lower().startswith('h') and result == 'Heads') or \
+              (side.lower().startswith('t') and result == 'Tails')
+    else:
+        won = random.choice([True, False])
+
+    payout = bet if won else -bet
     update_balance(user_id, payout)
     new_bal = get_balance(user_id)
-    
-    embed = discord.Embed(title=f"🪙 **{result}**", color=0x00FF00 if won else 0xFF0000)
-    embed.add_field(name="spent", value=f"**{bet:,}**", inline=True)
-    embed.add_field(name="📊", value="**win**" if won else "**lost**", inline=True)
+
+    all_in = (bet == balance)
+    title = f"🪙 **{result}**"
+    if all_in:
+        title += "  — ALL-IN "
+    embed = discord.Embed(title=title, color=0x00FF00 if won else 0xFF0000)
+    embed.add_field(name="Bet", value=f"**{bet:,}**", inline=True)
+    embed.add_field(name="📊", value=("**WIN**" if won else "**LOST**") + (" 💥" if all_in else ""), inline=True)
+    if all_in and not won:
+        embed.add_field(name="💀", value="**Wala ka nang pera, bro.**", inline=False)
+    elif all_in and won:
+        embed.add_field(name="💰", value="**DOUBLED UP**", inline=False)
     embed.add_field(name="Balance", value=f"**{new_bal:,}**", inline=False)
     await msg.edit(embed=embed)
 
