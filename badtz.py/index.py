@@ -86,7 +86,7 @@ TRIVIA_DB = {
         ("PBA legend", "Robert Jaworski", ["Ramon Fernandez", "Braulio Lim", "Lim Eng Beng"]),
         ("Miss Universe", "Gloria Diaz", ["Margaret Moran", "Melba Jorge", "Shamcey Supsup"]),
         ("Miss Universe 2018", "Catriona Gray", ["Gazini Ganados", "Kylie Verzosa", "Pia Wurtzbach"]),
-        ("OPM King", "Regine Velasquez", ["Martin Nievera", "Gary Valenciano", "Ogie Alcasid"]),
+        ("OPM Queen", "Regine Velasquez", ["Martin Nievera", "Gary Valenciano", "Ogie Alcasid"]),
         ("Asia's Songbird", "Regine Velasquez", ["Lea Salonga", "Sarah Geronimo", "Regine Velasquez"]),
         ("Popstar Royalty", "Sarah Geronimo", ["Regine Velasquez", "Lea Salonga", "Moira Dela Torre"]),
         ("Concert Queen", "Regine Velasquez", ["Sarah Geronimo", "Martin Nievera", "Gary V"]),
